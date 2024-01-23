@@ -5,9 +5,9 @@ Billing capture and transfer for AWS Cost Explorer
 
 1. AWS Credentials
 2. Data store
-  1. BigQuery
+  i. BigQuery
 2. Execution Environment
-  3. k8s
+  i. k8s
 
 ## Usage
 
