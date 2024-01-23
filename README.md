@@ -3,11 +3,13 @@ Billing capture and transfer for AWS Cost Explorer
 
 ## Prerequirements
 
-1. AWS Credentials
-2. Data store
-  i. BigQuery
-2. Execution Environment
-  i. k8s
+### AWS Credentials
+Only Access token is supported
+### Data store
+Only BigQuery is supported
+
+### Execution Environment
+  Only k8s is supported
 
 ## Usage
 
