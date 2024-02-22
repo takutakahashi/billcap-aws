@@ -24,7 +24,7 @@ to quickly create a Cobra application.`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
-		aws.Execute(context.Background())
+		aws.Execute(context.Background(), "JPY")
 	},
 }
 
@@ -46,4 +46,8 @@ func init() {
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
+	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.Flags().StringP("owner", "o", "", "Owner of data")
+	rootCmd.Flags().StringP("project", "p", "", "Project name")
+	rootCmd.Flags().StringP("currency", "c", "USD", "Base currency unit")
 }

@@ -2,29 +2,35 @@ package aws
 
 import (
 	"context"
-	"encoding/csv"
 	"log"
-	"os"
+	"strconv"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
+	"github.com/sirupsen/logrus"
+	"github.com/takutakahashi/billcap-schema/pkg/schema"
 )
 
-func Execute(ctx context.Context) {
+func Execute(ctx context.Context, baseCurrency string) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		log.Fatalf("unable to load SDK config, %v", err)
 	}
 
 	ceClient := costexplorer.NewFromConfig(cfg)
-
-	today := time.Now().Format("2006-01-02")
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
-
-	// Cost Explorer APIリクエスト用の入力を作成
+	targetGranularity := types.GranularityDaily
+	format := map[types.Granularity]string{
+		types.GranularityHourly: "2006-01-02T15:04:05Z",
+		types.GranularityDaily:  "2006-01-02",
+	}
+	now := time.Now()
+	today := now.Format(format[targetGranularity])
+	yesterday := now.AddDate(0, 0, -1).Format(format[targetGranularity])
 	input := &costexplorer.GetCostAndUsageInput{
 		TimePeriod: &types.DateInterval{
 			Start: aws.String(yesterday),
@@ -40,43 +46,51 @@ func Execute(ctx context.Context) {
 				Key:  aws.String("USAGE_TYPE"),
 			},
 		},
-		Granularity: types.GranularityDaily,
+		Granularity: targetGranularity,
 		Metrics:     []string{"UnblendedCost", "UsageQuantity"},
 	}
 
-	// Cost Explorer APIを実行
 	output, err := ceClient.GetCostAndUsage(ctx, input)
 	if err != nil {
 		log.Fatalf("failed to get cost and usage, %v", err)
 	}
 
-	// CSVライターを準備
-	csvWriter := csv.NewWriter(os.Stdout)
-	defer csvWriter.Flush()
-
-	// CSVヘッダを書き出し
-	headers := []string{"Start Date", "End Date", "Usage Type", "Unblended Cost", "Usage Quantity"}
-	if err := csvWriter.Write(headers); err != nil {
-		log.Fatalf("failed to write headers to CSV, %v", err)
-	}
-
-	// 結果をCSVに書き出し
 	for _, result := range output.ResultsByTime {
 		for _, group := range result.Groups {
-
-			record := []string{
-				*result.TimePeriod.Start,
-				*result.TimePeriod.End,
-				group.Keys[0],
-				group.Keys[1],
-				*group.Metrics["UsageQuantity"].Amount,
-				*group.Metrics["UsageQuantity"].Unit,
-				*group.Metrics["UnblendedCost"].Amount,
-				*group.Metrics["UnblendedCost"].Unit,
+			ret := schema.TransformedData{
+				Time:              now,
+				SchemaVersion:     schema.SchemaVersionTransformedData,
+				Owner:             "takutakahashi",
+				Project:           "lab",
+				Provider:          "AWS",
+				Service:           group.Keys[0],
+				SKU:               group.Keys[1],
+				CostAmount:        parseSize(*group.Metrics["UnblendedCost"].Amount),
+				CostAmountUnit:    *group.Metrics["UnblendedCost"].Unit,
+				UsageQuantity:     parseSize(*group.Metrics["UsageQuantity"].Amount),
+				UsageQuantityUnit: *group.Metrics["UsageQuantity"].Unit,
+				ExchangeRate:      150,
+				TotalCost:         parseSize(*group.Metrics["UnblendedCost"].Amount) * 150,
+				TotalUnit:         baseCurrency,
 			}
-			if err := csvWriter.Write(record); err != nil {
-				log.Fatalf("failed to write record to CSV, %v", err)
-			}
+			logrus.Info(ret)
 		}
 	}
+}
+func parseSize(str string) float64 {
+	// 数値以外の文字を取り除く
+	trimmed := strings.TrimFunc(str, func(r rune) bool {
+		return !unicode.IsNumber(r) && r != '.'
+	})
+
+	if trimmed == "" {
+		return -1 // 数値が見つからない場合
+	}
+
+	// float64 にパースする
+	value, err := strconv.ParseFloat(trimmed, 64)
+	if err != nil {
+		return -1 // パースに失敗した場合
+	}
+	return value
 }
