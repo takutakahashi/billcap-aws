@@ -5,10 +5,12 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/takutakahashi/billcap-aws/pkg/aws"
+	"github.com/takutakahashi/billcap-schema/pkg/store"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -24,7 +26,21 @@ to quickly create a Cobra application.`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
-		aws.Execute(context.Background(), "JPY")
+		owner := cmd.Flag("owner").Value.String()
+		project := cmd.Flag("project").Value.String()
+		currency := cmd.Flag("currency").Value.String()
+		data, err := aws.Execute(context.Background(), owner, project, currency)
+		if err != nil {
+			panic(err)
+		}
+		for _, d := range data {
+			fmt.Println(d)
+		}
+		s, err := store.NewBigQueryStore(context.Background(), store.BigQueryStoreConfig{})
+		if err != nil {
+			panic(err)
+		}
+		_ = s
 	},
 }
 
@@ -50,4 +66,5 @@ func init() {
 	rootCmd.Flags().StringP("owner", "o", "", "Owner of data")
 	rootCmd.Flags().StringP("project", "p", "", "Project name")
 	rootCmd.Flags().StringP("currency", "c", "USD", "Base currency unit")
+	rootCmd.Flags().StringP("store", "s", "bigquery", "Store driver")
 }

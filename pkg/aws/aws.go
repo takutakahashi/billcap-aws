@@ -2,7 +2,6 @@ package aws
 
 import (
 	"context"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -12,14 +11,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
-	"github.com/sirupsen/logrus"
 	"github.com/takutakahashi/billcap-schema/pkg/schema"
 )
 
-func Execute(ctx context.Context, baseCurrency string) {
+func Execute(ctx context.Context, owner, project, baseCurrency string) ([]schema.TransformedData, error) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
-		log.Fatalf("unable to load SDK config, %v", err)
+		return nil, err
 	}
 
 	ceClient := costexplorer.NewFromConfig(cfg)
@@ -52,16 +50,16 @@ func Execute(ctx context.Context, baseCurrency string) {
 
 	output, err := ceClient.GetCostAndUsage(ctx, input)
 	if err != nil {
-		log.Fatalf("failed to get cost and usage, %v", err)
+		return nil, err
 	}
-
+	ret := []schema.TransformedData{}
 	for _, result := range output.ResultsByTime {
 		for _, group := range result.Groups {
-			ret := schema.TransformedData{
+			ret = append(ret, schema.TransformedData{
 				Time:              now,
 				SchemaVersion:     schema.SchemaVersionTransformedData,
-				Owner:             "takutakahashi",
-				Project:           "lab",
+				Owner:             owner,
+				Project:           project,
 				Provider:          "AWS",
 				Service:           group.Keys[0],
 				SKU:               group.Keys[1],
@@ -72,25 +70,23 @@ func Execute(ctx context.Context, baseCurrency string) {
 				ExchangeRate:      150,
 				TotalCost:         parseSize(*group.Metrics["UnblendedCost"].Amount) * 150,
 				TotalUnit:         baseCurrency,
-			}
-			logrus.Info(ret)
+			})
 		}
 	}
+	return ret, nil
 }
 func parseSize(str string) float64 {
-	// 数値以外の文字を取り除く
 	trimmed := strings.TrimFunc(str, func(r rune) bool {
 		return !unicode.IsNumber(r) && r != '.'
 	})
 
 	if trimmed == "" {
-		return -1 // 数値が見つからない場合
+		return -1
 	}
 
-	// float64 にパースする
 	value, err := strconv.ParseFloat(trimmed, 64)
 	if err != nil {
-		return -1 // パースに失敗した場合
+		return -1
 	}
 	return value
 }
