@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/takutakahashi/billcap-aws/pkg/aws"
 	"github.com/takutakahashi/billcap-schema/pkg/store"
@@ -29,18 +30,27 @@ to quickly create a Cobra application.`,
 		owner := cmd.Flag("owner").Value.String()
 		project := cmd.Flag("project").Value.String()
 		currency := cmd.Flag("currency").Value.String()
-		data, err := aws.Execute(context.Background(), owner, project, currency)
+		ctx := context.Background()
+		data, err := aws.Execute(ctx, owner, project, currency)
 		if err != nil {
-			panic(err)
+			logrus.Fatal(err)
 		}
 		for _, d := range data {
 			fmt.Println(d)
 		}
-		s, err := store.NewBigQueryStore(context.Background(), store.BigQueryStoreConfig{})
+		s, err := store.NewBigQueryStore(context.Background(), store.BigQueryStoreConfig{
+			ProjectID: cmd.Flag("google-project-id").Value.String(),
+			Transformed: store.BigQueryDatabase{
+				DatasetID: cmd.Flag("google-dataset-id").Value.String(),
+				TableID:   cmd.Flag("google-table-id").Value.String(),
+			},
+		})
 		if err != nil {
-			panic(err)
+			logrus.Fatal(err)
 		}
-		_ = s
+		if err := s.LoadTransformed(ctx, data); err != nil {
+			logrus.Fatal(err)
+		}
 	},
 }
 
@@ -67,4 +77,9 @@ func init() {
 	rootCmd.Flags().StringP("project", "p", "", "Project name")
 	rootCmd.Flags().StringP("currency", "c", "USD", "Base currency unit")
 	rootCmd.Flags().StringP("store", "s", "bigquery", "Store driver")
+	rootCmd.Flags().StringP("google-serviceaccount-json-path", "j", "/secret/serviceaccount.json", "Google Cloud Service Account JSON Path")
+	rootCmd.Flags().StringP("google-project-id", "i", "", "Google Cloud Project ID")
+	rootCmd.Flags().StringP("google-dataset-id", "d", "", "Google Cloud Dataset ID")
+	rootCmd.Flags().StringP("google-table-id", "t", "", "Google Cloud Table ID")
+
 }
