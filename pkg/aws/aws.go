@@ -14,25 +14,17 @@ import (
 	"github.com/takutakahashi/billcap-schema/pkg/schema"
 )
 
-func Execute(ctx context.Context, owner, project, baseCurrency string) ([]schema.TransformedData, error) {
+func Execute(ctx context.Context, owner, project, baseCurrency string, from, to string) ([]schema.TransformedData, error) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	ceClient := costexplorer.NewFromConfig(cfg)
-	targetGranularity := types.GranularityDaily
-	format := map[types.Granularity]string{
-		types.GranularityHourly: "2006-01-02T15:04:05Z",
-		types.GranularityDaily:  "2006-01-02",
-	}
-	now := time.Now()
-	today := now.Format(format[targetGranularity])
-	yesterday := now.AddDate(0, 0, -1).Format(format[targetGranularity])
 	input := &costexplorer.GetCostAndUsageInput{
 		TimePeriod: &types.DateInterval{
-			Start: aws.String(yesterday),
-			End:   aws.String(today),
+			Start: aws.String(from),
+			End:   aws.String(to),
 		},
 		GroupBy: []types.GroupDefinition{
 			{
@@ -44,7 +36,7 @@ func Execute(ctx context.Context, owner, project, baseCurrency string) ([]schema
 				Key:  aws.String("USAGE_TYPE"),
 			},
 		},
-		Granularity: targetGranularity,
+		Granularity: types.GranularityDaily,
 		Metrics:     []string{"UnblendedCost", "UsageQuantity"},
 	}
 
@@ -55,8 +47,12 @@ func Execute(ctx context.Context, owner, project, baseCurrency string) ([]schema
 	ret := []schema.TransformedData{}
 	for _, result := range output.ResultsByTime {
 		for _, group := range result.Groups {
+			t, err := time.Parse("2006-01-02", *result.TimePeriod.Start)
+			if err != nil {
+				return nil, err
+			}
 			ret = append(ret, schema.TransformedData{
-				Time:              now,
+				Time:              t,
 				SchemaVersion:     schema.SchemaVersionTransformedData,
 				Owner:             owner,
 				Project:           project,
@@ -69,7 +65,7 @@ func Execute(ctx context.Context, owner, project, baseCurrency string) ([]schema
 				UsageQuantityUnit: *group.Metrics["UsageQuantity"].Unit,
 				ExchangeRate:      150,
 				TotalCost:         parseSize(*group.Metrics["UnblendedCost"].Amount) * 150,
-				TotalUnit:         baseCurrency,
+				TotalCostUnit:     baseCurrency,
 			})
 		}
 	}

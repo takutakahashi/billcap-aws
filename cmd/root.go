@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -31,21 +32,42 @@ to quickly create a Cobra application.`,
 		project := cmd.Flag("project").Value.String()
 		currency := cmd.Flag("currency").Value.String()
 		ctx := context.Background()
-		data, err := aws.Execute(ctx, owner, project, currency)
+		from := cmd.Flag("date-from").Value.String()
+		if from == "" {
+			from = time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+		}
+		to := cmd.Flag("date-to").Value.String()
+		if to == "" {
+			to = time.Now().Format("2006-01-02")
+		}
+
+		data, err := aws.Execute(ctx, owner, project, currency, from, to)
 		if err != nil {
 			logrus.Fatal(err)
 		}
 		for _, d := range data {
 			fmt.Println(d)
 		}
+
+		googleServiceAccountJSONPath := cmd.Flag("google-serviceaccount-json-path").Value.String()
+		googleProjectID := cmd.Flag("google-project-id").Value.String()
+		if googleProjectID == "" {
+			logrus.Fatal("google-project-id is required")
+		}
+		googleDatasetID := cmd.Flag("google-dataset-id").Value.String()
+		googleTableID := cmd.Flag("google-table-id").Value.String()
 		s, err := store.NewBigQueryStore(context.Background(), store.BigQueryStoreConfig{
-			ProjectID: cmd.Flag("google-project-id").Value.String(),
+			CredentialsPath: googleServiceAccountJSONPath,
+			ProjectID:       googleProjectID,
 			Transformed: store.BigQueryDatabase{
-				DatasetID: cmd.Flag("google-dataset-id").Value.String(),
-				TableID:   cmd.Flag("google-table-id").Value.String(),
+				DatasetID: googleDatasetID,
+				TableID:   googleTableID,
 			},
 		})
 		if err != nil {
+			logrus.Fatal(err)
+		}
+		if err := s.Setup(ctx); err != nil {
 			logrus.Fatal(err)
 		}
 		if err := s.LoadTransformed(ctx, data); err != nil {
@@ -79,7 +101,9 @@ func init() {
 	rootCmd.Flags().StringP("store", "s", "bigquery", "Store driver")
 	rootCmd.Flags().StringP("google-serviceaccount-json-path", "j", "/secret/serviceaccount.json", "Google Cloud Service Account JSON Path")
 	rootCmd.Flags().StringP("google-project-id", "i", "", "Google Cloud Project ID")
-	rootCmd.Flags().StringP("google-dataset-id", "d", "", "Google Cloud Dataset ID")
-	rootCmd.Flags().StringP("google-table-id", "t", "", "Google Cloud Table ID")
+	rootCmd.Flags().StringP("google-dataset-id", "d", "billcap", "Google Cloud Dataset ID")
+	rootCmd.Flags().StringP("google-table-id", "t", "billcap", "Google Cloud Table ID")
+	rootCmd.Flags().String("date-from", "", "Date from. Format: 2006-01-02")
+	rootCmd.Flags().String("date-to", "", "Date to Format: 2006-01-02")
 
 }
